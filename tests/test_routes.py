@@ -50,6 +50,9 @@ class TestAccountService(TestCase):
         """Runs once after each test case"""
         db.session.remove()
 
+    
+
+
     ######################################################################
     #  H E L P E R   M E T H O D S
     ######################################################################
@@ -123,4 +126,131 @@ class TestAccountService(TestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_415_UNSUPPORTED_MEDIA_TYPE)
 
-    # ADD YOUR TEST CASES HERE ...
+   
+
+    def test_get_account(self):
+        """It should Read a single Account"""
+        account = self._create_accounts(1)[0]
+        resp = self.client.get(
+        f"{BASE_URL}/{account.id}", content_type="application/json"
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        data = resp.get_json()
+        self.assertEqual(data["name"], account.name)
+
+
+    def test_get_account_not_found(self):
+        """It should not Read an Account that is not found"""
+        resp = self.client.get(f"{BASE_URL}/0")
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
+
+ ######################################################################
+    
+    def test_update_account(self):
+        """It should Update an existing Account"""
+        # First create an account
+        account = self._create_accounts(1)[0]
+
+        # New data to update
+        new_data = {
+            "name": "Updated Name",
+            "email": "updated@example.com",
+            "address": "123 Updated St",
+            "phone_number": "1234567890",
+            "date_joined": account.date_joined.isoformat()
+        }
+
+        resp = self.client.put(
+            f"{BASE_URL}/{account.id}",
+            json=new_data,
+             content_type="application/json"
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+        data = resp.get_json()
+        self.assertEqual(data["name"], "Updated Name")
+        self.assertEqual(data["email"], "updated@example.com")
+
+    def test_update_account_not_found(self):
+        """It should return 404 when updating non-existing account"""
+        new_data = {
+            "name": "Ghost",
+            "email": "ghost@example.com",
+            "address": "Nowhere",
+        }
+
+        resp = self.client.put(
+            f"{BASE_URL}/0",  # non-existent
+            json=new_data,
+            content_type="application/json"
+         )
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
+
+    ######################################################################
+    def test_delete_account(self):
+        """It should delete an account"""
+        account = self._create_accounts(1)[0]
+        resp = self.client.delete(f"{BASE_URL}/{account.id}")
+        self.assertEqual(resp.status_code, status.HTTP_204_NO_CONTENT)
+
+        # Make sure it is really deleted
+        resp = self.client.get(f"{BASE_URL}/{account.id}")
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
+
+
+    def test_delete_account_not_found(self):
+        """It should return 404 when deleting non-existing account"""
+        resp = self.client.delete(f"{BASE_URL}/0")
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
+
+    ######################################################################
+
+    def test_list_accounts(self):
+        """It should list all accounts"""
+        self._create_accounts(5)
+        resp = self.client.get(BASE_URL)
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        data = resp.get_json()
+        self.assertEqual(len(data), 5)
+
+
+    def test_list_accounts_empty(self):
+        """It should return an empty list when no accounts exist"""
+        resp = self.client.get(BASE_URL)
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        data = resp.get_json()
+        self.assertEqual(data, [])
+    
+    ######################################################################
+        #  A D D I T I O N A L   C O V E R A G E   T E S T S
+    ######################################################################
+
+    def test_deserialize_missing_data(self):
+        """It should raise DataValidationError when required fields are missing"""
+        from service.models import Account, DataValidationError
+        account = Account()
+        data = {"email": "test@example.com"}  # missing name & address
+        with self.assertRaises(DataValidationError):
+            account.deserialize(data)
+
+    def test_deserialize_bad_data_type(self):
+        """It should raise DataValidationError when data type is invalid"""
+        from service.models import Account, DataValidationError
+        account = Account()
+        with self.assertRaises(DataValidationError):
+            account.deserialize("not a dict")
+    
+    def test_check_content_type_invalid(self):
+        """It should return 415 UNSUPPORTED_MEDIA_TYPE for wrong content type"""
+        account = {
+            "name": "Invalid",
+            "email": "invalid@example.com",
+            "address": "Somewhere"
+        }
+        # Force a wrong content type to trigger check_content_type() abort
+        resp = self.client.post(
+            BASE_URL,
+            data=account,  # sending as form data, not JSON
+            content_type="text/plain"
+        )
+        self.assertEqual(resp.status_code, status.HTTP_415_UNSUPPORTED_MEDIA_TYPE)
